@@ -1,10 +1,14 @@
 import { GoogleGenAI, Chat, GenerateContentResponse, Type } from "@google/genai";
 import { AgentConfig } from "../types";
 
-// Initialize the client
-// Ideally, this should be recreated if the API key were dynamic, 
-// but per requirements, we use process.env.API_KEY directly.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper para obtener el cliente de forma segura
+const getClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.warn("API Key no encontrada en process.env");
+  }
+  return new GoogleGenAI({ apiKey: apiKey || '' });
+};
 
 interface SendMessageOptions {
   message: string;
@@ -13,6 +17,7 @@ interface SendMessageOptions {
 }
 
 export const createChatSession = (config: AgentConfig): Chat => {
+  const ai = getClient();
   const tools = config.useSearch ? [{ googleSearch: {} }] : [];
 
   return ai.chats.create({
