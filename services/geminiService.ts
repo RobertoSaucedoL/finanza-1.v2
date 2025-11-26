@@ -3,7 +3,7 @@ import { AgentConfig } from "../types";
 
 // Helper para obtener el cliente de forma segura
 const getClient = () => {
-  const apiKey = import.meta.env.VITE_API_KEY; // ✅ Cambiado de process.env
+  const apiKey = import.meta.env.VITE_API_KEY;
   
   if (!apiKey) {
     console.error("🔑 API Key no encontrada en import.meta.env.VITE_API_KEY");
@@ -11,7 +11,7 @@ const getClient = () => {
   }
   
   console.log("🔑 API Key detectada (empieza con):", apiKey.substring(0, 6) + "...");
-  return new GoogleGenerativeAI(apiKey); // ✅ Corregido el constructor
+  return new GoogleGenerativeAI(apiKey);
 };
 
 // Crear sesión de chat
@@ -48,13 +48,17 @@ export async function* streamMessage(chat: any, message: string) {
     const result = await chat.sendMessageStream(message);
     
     for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      console.log("📨 Chunk recibido");
-      
-      yield {
-        text: chunkText,
-        groundingChunks: chunk.groundingMetadata?.groundingChunks || []
-      };
+      try {
+        const chunkText = chunk.text();
+        console.log("📨 Chunk recibido");
+        
+        yield {
+          text: chunkText,
+          groundingChunks: chunk.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+        };
+      } catch (chunkError) {
+        console.warn("⚠️ Error procesando chunk:", chunkError);
+      }
     }
     
     console.log("✅ Stream completado");
