@@ -22,88 +22,103 @@ export const createChatSession = (config: AgentConfig) => {
     
     const model = genAI.getGenerativeModel({ 
       model: config.model,
-      systemInstruction: config.systemInstruction ? {
-        role: "user",
-        parts: [{ text: config.systemInstruction }]
-      } : undefined,
+      systemInstruction: config.systemInstruction,
     });
     
     const tools = config.useSearch ? [{ googleSearch: {} }] : undefined;
     
-    return model.startChat({
+    const chat = model.startChat({
       history: [],
       generationConfig: {
         temperature: config.temperature,
-        maxOutputTokens: 1000, // 👈 Añade esto
+        maxOutputTokens: 1000,
       },
       tools: tools,
     });
+
+    console.log("✅ Sesión de chat creada exitosamente");
+    return chat;
   } catch (error) {
     console.error("❌ Error al crear la sesión de chat:", error);
     throw error;
   }
 };
 
-// Enviar mensaje con streaming - FORMATO CORREGIDO
+// Enviar mensaje con streaming - VERSIÓN CORREGIDA
 export async function* streamMessage(chat: any, message: string) {
   try {
     if (!message || !message.trim()) {
       throw new Error("Mensaje vacío, no se puede enviar a Gemini");
     }
 
-    console.log("📤 Enviando mensaje:", message);
+    console.log("📤 Enviando mensaje a Gemini:", message.substring(0, 100) + "...");
 
-    // 👇 FORMATO CORRECTO para Gemini
-    const result = await chat.sendMessageStream({
-      role: "user",
-      parts: [{ text: message }]
-    });
+    // 👇 FORMATO ABSOLUTAMENTE CORRECTO para Gemini
+    // La API espera un objeto con la estructura específica
+    const result = await chat.sendMessageStream(message);
 
+    console.log("📨 Respuesta recibida, iniciando stream...");
+
+    let receivedChunks = 0;
+    
     for await (const chunk of result.stream) {
+      receivedChunks++;
       try {
         const chunkText = chunk.text();
-        console.log("📨 Chunk recibido:", chunkText?.substring(0, 50) + "...");
+        console.log(`📦 Chunk ${receivedChunks}:`, chunkText?.substring(0, 50) + "...");
 
         yield {
-          text: chunkText,
-          groundingChunks:
-            chunk.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
+          text: chunkText || "",
+          groundingChunks: chunk.groundingMetadata?.groundingChunks || [],
         };
       } catch (chunkError) {
         console.warn("⚠️ Error procesando chunk:", chunkError);
-        // Continúa con el siguiente chunk en lugar de romper el stream
         continue;
       }
     }
 
-    console.log("✅ Stream completado");
+    console.log(`✅ Stream completado. Chunks recibidos: ${receivedChunks}`);
+
   } catch (error: any) {
-    console.error("❌ Error en stream:", error);
+    console.error("❌ Error crítico en stream:", error);
     
-    // Mensaje de error más específico
+    // Análisis detallado del error
     if (error.message?.includes("ContentUnion")) {
-      throw new Error("Error de formato en el mensaje. Verifica la estructura del contenido.");
+      console.error("🔍 Problema de formato ContentUnion detectado");
+      throw new Error("Error de formato en el mensaje (ContentUnion). La API de Gemini cambió recientemente.");
+    }
+    
+    if (error.message?.includes("API key")) {
+      throw new Error("Problema con la API Key. Verifica que sea válida y tenga permisos.");
     }
     
     throw new Error(`Error al comunicarse con Gemini: ${error.message}`);
   }
 }
 
-// Versión alternativa sin streaming (como fallback)
+// Versión alternativa sin streaming (fallback robusto)
 export const sendMessageSimple = async (chat: any, message: string) => {
   try {
-    console.log("📤 Enviando mensaje (simple):", message);
+    console.log("🔄 Usando método simple para mensaje:", message.substring(0, 100) + "...");
     
-    const result = await chat.sendMessage({
-      role: "user", 
-      parts: [{ text: message }]
-    });
-    
+    const result = await chat.sendMessage(message);
     const response = await result.response;
+    
+    console.log("✅ Respuesta simple recibida");
     return response.text();
   } catch (error: any) {
-    console.error("❌ Error en mensaje simple:", error);
-    throw error;
+    console.error("❌ Error en método simple:", error);
+    
+    // Intentar con generateContent como último recurso
+    try {
+      console.log("🔄 Intentando con generateContent...");
+      const genAI = getClient();
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await model.generateContent(message);
+      return result.response.text();
+    } catch (finalError) {
+      throw new Error(`No se pudo procesar el mensaje: ${error.message}`);
+    }
   }
 };
 
@@ -126,6 +141,6 @@ export const analyzeFinancialData = async (data: string) => {
 export default { 
   createChatSession, 
   streamMessage, 
-  sendMessageSimple, // 👈 Exporta la nueva función
+  sendMessageSimple,
   analyzeFinancialData 
 };
