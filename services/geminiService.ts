@@ -43,24 +43,32 @@ export const createChatSession = (config: AgentConfig) => {
 // Enviar mensaje con streaming
 export async function* streamMessage(chat: any, message: string) {
   try {
+    if (!message || !message.trim()) {
+      throw new Error("Mensaje vacío, no se puede enviar a Gemini");
+    }
+
     console.log("📤 Enviando mensaje:", message);
-    
-    const result = await chat.sendMessageStream(message);
-    
+
+    // 👇 CAMBIO IMPORTANTE: mandamos partes [{ text: message }]
+    const result = await chat.sendMessageStream([
+      { text: message }
+    ]);
+
     for await (const chunk of result.stream) {
       try {
         const chunkText = chunk.text();
         console.log("📨 Chunk recibido");
-        
+
         yield {
           text: chunkText,
-          groundingChunks: chunk.candidates?.[0]?.groundingMetadata?.groundingChunks || []
+          groundingChunks:
+            chunk.candidates?.[0]?.groundingMetadata?.groundingChunks || [],
         };
       } catch (chunkError) {
         console.warn("⚠️ Error procesando chunk:", chunkError);
       }
     }
-    
+
     console.log("✅ Stream completado");
   } catch (error) {
     console.error("❌ Error en stream:", error);
