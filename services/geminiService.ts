@@ -22,7 +22,10 @@ export const createChatSession = (config: AgentConfig) => {
     
     const model = genAI.getGenerativeModel({ 
       model: config.model,
-      systemInstruction: config.systemInstruction,
+      systemInstruction: config.systemInstruction ? {
+        role: "user",
+        parts: [{ text: config.systemInstruction }]
+      } : undefined,
     });
     
     const tools = config.useSearch ? [{ googleSearch: {} }] : undefined;
@@ -31,6 +34,7 @@ export const createChatSession = (config: AgentConfig) => {
       history: [],
       generationConfig: {
         temperature: config.temperature,
+        maxOutputTokens: 1000, // 👈 Añade esto
       },
       tools: tools,
     });
@@ -40,7 +44,7 @@ export const createChatSession = (config: AgentConfig) => {
   }
 };
 
-// Enviar mensaje con streaming
+// Enviar mensaje con streaming - FORMATO CORREGIDO
 export async function* streamMessage(chat: any, message: string) {
   try {
     if (!message || !message.trim()) {
@@ -49,15 +53,16 @@ export async function* streamMessage(chat: any, message: string) {
 
     console.log("📤 Enviando mensaje:", message);
 
-    // 👇 CAMBIO IMPORTANTE: mandamos partes [{ text: message }]
-    const result = await chat.sendMessageStream([
-      { text: message }
-    ]);
+    // 👇 FORMATO CORRECTO para Gemini
+    const result = await chat.sendMessageStream({
+      role: "user",
+      parts: [{ text: message }]
+    });
 
     for await (const chunk of result.stream) {
       try {
         const chunkText = chunk.text();
-        console.log("📨 Chunk recibido");
+        console.log("📨 Chunk recibido:", chunkText?.substring(0, 50) + "...");
 
         yield {
           text: chunkText,
@@ -66,15 +71,41 @@ export async function* streamMessage(chat: any, message: string) {
         };
       } catch (chunkError) {
         console.warn("⚠️ Error procesando chunk:", chunkError);
+        // Continúa con el siguiente chunk en lugar de romper el stream
+        continue;
       }
     }
 
     console.log("✅ Stream completado");
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Error en stream:", error);
-    throw error;
+    
+    // Mensaje de error más específico
+    if (error.message?.includes("ContentUnion")) {
+      throw new Error("Error de formato en el mensaje. Verifica la estructura del contenido.");
+    }
+    
+    throw new Error(`Error al comunicarse con Gemini: ${error.message}`);
   }
 }
+
+// Versión alternativa sin streaming (como fallback)
+export const sendMessageSimple = async (chat: any, message: string) => {
+  try {
+    console.log("📤 Enviando mensaje (simple):", message);
+    
+    const result = await chat.sendMessage({
+      role: "user", 
+      parts: [{ text: message }]
+    });
+    
+    const response = await result.response;
+    return response.text();
+  } catch (error: any) {
+    console.error("❌ Error en mensaje simple:", error);
+    throw error;
+  }
+};
 
 // Análisis de datos financieros
 export const analyzeFinancialData = async (data: string) => {
@@ -92,4 +123,9 @@ export const analyzeFinancialData = async (data: string) => {
   }
 };
 
-export default { createChatSession, streamMessage, analyzeFinancialData };
+export default { 
+  createChatSession, 
+  streamMessage, 
+  sendMessageSimple, // 👈 Exporta la nueva función
+  analyzeFinancialData 
+};
